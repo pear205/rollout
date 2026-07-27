@@ -250,6 +250,9 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
     <div class="bag-msg" id="bagMsg">출동 조건을 입력하면 목록이 만들어져요</div>
   </div>
 
+  <!-- 가방 추천 한 줄. 게이지보다 튀면 안 되므로 기존 .hint 그대로 쓴다 -->
+  <p class="hint" id="bagRec" style="margin:0 2px 2px"></p>
+
   <div id="list"></div>
 
   <!-- 내 임무 — 로그인했을 때만 보인다 -->
@@ -388,63 +391,70 @@ const out = ctx => ctx.places.includes('야외');
    value가 null이면 셀 수 없는 단위('파우치')라 단위만 보여준다. */
 const fmtQty = q => q==null ? '' : (q.value==null ? q.unit : q.value+q.unit);
 
+/* vol — 가방 부피 등급. 척도는 1·2·3·5·8 (피보나치형: 간격을 넓혀 애매한 구간을 없앤다).
+   절대 부피(리터)가 아니라 앵커 대비 상대비교로 매긴다. 앵커는 CLAUDE.md에 고정돼 있다:
+     1 기저귀 1장·밴드파우치 / 2 지갑·젖병 1개 / 3 여벌 양말·간식 1봉 / 5 여벌 옷 1벌 / 8 담요
+   수량이 있는 항목은 낱개 1개 기준으로 매긴다 (합산 로직이 수량을 곱한다).
+   아기띠·유모차·카시트 쿠션은 가방 "안"에 안 들어가므로 vol을 아예 넣지 않는다. */
 const ITEMS = [
   // ── 기저귀·위생
-  {id:'diaper', c:0, n:'기저귀', when:c=>c.ageM<=36, warn:true,
+  {id:'diaper', c:0, n:'기저귀', when:c=>c.ageM<=36, warn:true, vol:1,
    q:c=>({value:nz(c.hours/2)+2, unit:'장'}), why:c=>`2시간에 1장 + 여분 2장`},
-  {id:'nightdiaper', c:0, n:'밤기저귀', when:c=>c.ageM<=36 && c.endH>=20, warn:true,
+  {id:'nightdiaper', c:0, n:'밤기저귀', when:c=>c.ageM<=36 && c.endH>=20, warn:true, vol:1,
    q:()=>({value:1, unit:'장'}), why:()=>'귀가가 늦어요'},
-  {id:'wipe', c:0, n:'물티슈', when:c=>c.ageM<=60, q:c=>({value:c.hours>4?2:1, unit:'팩'})},
-  {id:'mat', c:0, n:'방수 기저귀 매트', when:c=>c.ageM<=24 && c.places.length>0},
-  {id:'bag', c:0, n:'지퍼백 / 비닐봉투', q:()=>({value:3, unit:'장'}), why:()=>'오염된 옷·기저귀 담기'},
-  {id:'sanit', c:0, n:'손 소독제', when:c=>c.places.includes('식당')||c.places.includes('실내놀이')},
-  {id:'potty', c:0, n:'휴대용 변기커버', when:c=>c.ageM>=24 && c.ageM<=60, why:()=>'배변 가리는 시기'},
+  {id:'wipe', c:0, n:'물티슈', when:c=>c.ageM<=60, vol:2, q:c=>({value:c.hours>4?2:1, unit:'팩'})},
+  {id:'mat', c:0, n:'방수 기저귀 매트', when:c=>c.ageM<=24 && c.places.length>0, vol:3},
+  {id:'bag', c:0, n:'지퍼백 / 비닐봉투', vol:1, q:()=>({value:3, unit:'장'}), why:()=>'오염된 옷·기저귀 담기'},
+  {id:'sanit', c:0, n:'손 소독제', when:c=>c.places.includes('식당')||c.places.includes('실내놀이'), vol:1},
+  {id:'potty', c:0, n:'휴대용 변기커버', when:c=>c.ageM>=24 && c.ageM<=60, vol:3, why:()=>'배변 가리는 시기'},
 
   // ── 수유·식사
-  {id:'bottle', c:1, n:'젖병', when:c=>c.ageM<=15 && c.feeding!=='모유', q:c=>({value:Math.min(3,nz(c.hours/3.5)), unit:'개'})},
-  {id:'formula', c:1, n:'분유 포션', when:c=>c.ageM<=15 && c.feeding!=='모유', q:c=>({value:nz(c.hours/3.5), unit:'회분'})},
-  {id:'thermos', c:1, n:'보온병(따뜻한 물)', when:c=>c.ageM<=15 && c.feeding!=='모유'},
-  {id:'cover', c:1, n:'수유 가리개', when:c=>c.feeding!=='분유' && c.ageM<=15 && c.places.length>0},
-  {id:'babyfood', c:1, n:'이유식 + 스푼', when:c=>c.ageM>=6 && c.ageM<=18 && (overlaps(c,11,13.5)||overlaps(c,17,19.5)),
+  {id:'bottle', c:1, n:'젖병', when:c=>c.ageM<=15 && c.feeding!=='모유', vol:2, q:c=>({value:Math.min(3,nz(c.hours/3.5)), unit:'개'})},
+  {id:'formula', c:1, n:'분유 포션', when:c=>c.ageM<=15 && c.feeding!=='모유', vol:1, q:c=>({value:nz(c.hours/3.5), unit:'회분'})},
+  {id:'thermos', c:1, n:'보온병(따뜻한 물)', when:c=>c.ageM<=15 && c.feeding!=='모유', vol:3},
+  {id:'cover', c:1, n:'수유 가리개', when:c=>c.feeding!=='분유' && c.ageM<=15 && c.places.length>0, vol:3},
+  {id:'babyfood', c:1, n:'이유식 + 스푼', when:c=>c.ageM>=6 && c.ageM<=18 && (overlaps(c,11,13.5)||overlaps(c,17,19.5)), vol:3,
    q:c=>({value:(overlaps(c,11,13.5)&&overlaps(c,17,19.5))?2:1, unit:'끼'}), why:()=>'식사 시간대에 걸쳐요'},
-  {id:'snack', c:1, n:'간식', when:c=>c.ageM>=8, q:c=>({value:c.hours>3?2:1, unit:'봉'}), why:()=>'기다릴 때 최고의 무기'},
-  {id:'cup', c:1, n:'빨대컵 / 물통', when:c=>c.ageM>=6},
-  {id:'bib', c:1, n:'턱받이', when:c=>c.ageM>=5 && c.ageM<=30},
-  {id:'chaircover', c:1, n:'휴대용 아기의자 벨트', when:c=>c.places.includes('식당') && c.ageM>=6 && c.ageM<=36},
+  {id:'snack', c:1, n:'간식', when:c=>c.ageM>=8, vol:3, q:c=>({value:c.hours>3?2:1, unit:'봉'}), why:()=>'기다릴 때 최고의 무기'},
+  {id:'cup', c:1, n:'빨대컵 / 물통', when:c=>c.ageM>=6, vol:3},
+  {id:'bib', c:1, n:'턱받이', when:c=>c.ageM>=5 && c.ageM<=30, vol:2},
+  {id:'chaircover', c:1, n:'휴대용 아기의자 벨트', when:c=>c.places.includes('식당') && c.ageM>=6 && c.ageM<=36, vol:3},
 
   // ── 옷·체온
-  {id:'spare', c:2, n:'여벌 옷', when:c=>c.ageM<=60, q:c=>({value:c.hours>3?2:1, unit:'벌'})},
-  {id:'sock', c:2, n:'여벌 양말', when:c=>c.ageM<=60},
-  {id:'outer', c:2, n:'얇은 겉옷', when:c=>c.temp>=15 && c.temp<24, why:()=>'실내 냉방 대비'},
-  {id:'warm', c:2, n:'방한복·장갑', when:c=>c.temp<8},
-  {id:'blanket', c:2, n:'담요 / 속싸개', when:c=>c.ageM<=18 && c.temp<24},
-  {id:'hat', c:2, n:'모자', when:c=>out(c) && (c.temp>=23||c.temp<=8)},
-  {id:'sun', c:2, n:'선크림', when:c=>out(c) && c.ageM>=6 && c.temp>=16 && c.sky==='맑음'},
-  {id:'rain', c:2, n:'우비 / 유모차 레인커버', when:c=>c.sky==='비'},
-  {id:'fan', c:2, n:'휴대용 선풍기', when:c=>c.temp>=28},
-  {id:'mosq', c:2, n:'모기 기피제', when:c=>out(c) && c.temp>=20 && c.month>=5 && c.month<=9},
+  {id:'spare', c:2, n:'여벌 옷', when:c=>c.ageM<=60, vol:5, q:c=>({value:c.hours>3?2:1, unit:'벌'})},
+  {id:'sock', c:2, n:'여벌 양말', when:c=>c.ageM<=60, vol:3},
+  {id:'outer', c:2, n:'얇은 겉옷', when:c=>c.temp>=15 && c.temp<24, vol:5, why:()=>'실내 냉방 대비'},
+  {id:'warm', c:2, n:'방한복·장갑', when:c=>c.temp<8, vol:8},
+  {id:'blanket', c:2, n:'담요 / 속싸개', when:c=>c.ageM<=18 && c.temp<24, vol:8},
+  {id:'hat', c:2, n:'모자', when:c=>out(c) && (c.temp>=23||c.temp<=8), vol:3},
+  {id:'sun', c:2, n:'선크림', when:c=>out(c) && c.ageM>=6 && c.temp>=16 && c.sky==='맑음', vol:1},
+  {id:'rain', c:2, n:'우비 / 유모차 레인커버', when:c=>c.sky==='비', vol:5},
+  {id:'fan', c:2, n:'휴대용 선풍기', when:c=>c.temp>=28, vol:3},
+  {id:'mosq', c:2, n:'모기 기피제', when:c=>out(c) && c.temp>=20 && c.month>=5 && c.month<=9, vol:2},
 
   // ── 달래기
-  {id:'teether', c:3, n:'치발기 / 딸랑이', when:c=>c.ageM<=18},
-  {id:'doll', c:3, n:'애착 인형·이불', when:c=>c.ageM>=6 && c.ageM<=60},
-  {id:'sticker', c:3, n:'스티커북 / 그림책', when:c=>c.ageM>=18 && (c.places.includes('식당')||c.transport==='대중교통')},
-  {id:'newtoy', c:3, n:'새 장난감 하나', when:c=>c.hours>=4 && c.ageM>=8, why:()=>'후반부에 꺼낼 비장의 카드'},
+  {id:'teether', c:3, n:'치발기 / 딸랑이', when:c=>c.ageM<=18, vol:2},
+  {id:'doll', c:3, n:'애착 인형·이불', when:c=>c.ageM>=6 && c.ageM<=60, vol:5},
+  {id:'sticker', c:3, n:'스티커북 / 그림책', when:c=>c.ageM>=18 && (c.places.includes('식당')||c.transport==='대중교통'), vol:3},
+  {id:'newtoy', c:3, n:'새 장난감 하나', when:c=>c.hours>=4 && c.ageM>=8, vol:3, why:()=>'후반부에 꺼낼 비장의 카드'},
 
   // ── 안전·응급
-  {id:'fever', c:4, n:'해열제 + 계량스푼', when:c=>c.ageM<=72},
-  {id:'thermo', c:4, n:'체온계', when:c=>c.ageM<=72 && c.hours>=4},
+  {id:'fever', c:4, n:'해열제 + 계량스푼', when:c=>c.ageM<=72, vol:2},
+  {id:'thermo', c:4, n:'체온계', when:c=>c.ageM<=72 && c.hours>=4, vol:1},
   // 개수로 세지 않는 항목 — value 없이 단위만 (파우치째로 챙긴다)
-  {id:'kit', c:4, n:'밴드·소독솜', q:()=>({value:null, unit:'파우치'})},
-  {id:'card', c:4, n:'아기수첩 / 보험증', when:c=>c.places.includes('병원')},
+  {id:'kit', c:4, n:'밴드·소독솜', vol:1, q:()=>({value:null, unit:'파우치'})},
+  {id:'card', c:4, n:'아기수첩 / 보험증', when:c=>c.places.includes('병원'), vol:2},
+  // 아래 3개는 vol 없음 — 착용하거나(아기띠) 그 자체가 이동수단이거나(유모차)
+  // 차에 두는 것(카시트 쿠션)이라 가방 부피에 들어가면 안 된다
   {id:'carrier', c:4, n:'아기띠', when:c=>c.ageM<=30 && c.transport!=='자차'},
   {id:'stroller', c:4, n:'유모차', when:c=>c.ageM<=42 && c.hours>=2},
   {id:'carseat', c:4, n:'카시트 목쿠션', when:c=>c.transport==='자차' && c.ageM<=24},
 
   // ── 부모용
-  {id:'battery', c:5, n:'보조 배터리', when:c=>c.hours>=4},
-  {id:'wallet', c:5, n:'지갑·카드·차키'},
-  {id:'mybottle', c:5, n:'엄마아빠 물병', when:c=>c.feeding!=='분유'&&c.feeding!=='유아식', why:()=>'수유 중엔 탈수가 빨라요'},
-  {id:'tissue', c:5, n:'손수건 2장'}
+  {id:'battery', c:5, n:'보조 배터리', when:c=>c.hours>=4, vol:2},
+  {id:'wallet', c:5, n:'지갑·카드·차키', vol:2},
+  {id:'mybottle', c:5, n:'엄마아빠 물병', when:c=>c.feeding!=='분유'&&c.feeding!=='유아식', vol:3, why:()=>'수유 중엔 탈수가 빨라요'},
+  {id:'tissue', c:5, n:'손수건 2장', vol:2}
 ];
 
 /* =========================================================
@@ -454,6 +464,19 @@ const PLACES = ['실내놀이','야외','식당','병원','마트'];
 const TRANSPORT = ['도보','자차','대중교통'];
 const SKY = ['맑음','흐림','비','눈'];
 const FEEDING = ['모유','분유','혼합','유아식'];
+
+/* 부피 합계 → 가방 추천. "항목별 등급(ITEMS의 vol)"과 "합계→문구 매핑"을 일부러
+   분리해 뒀다. 실사용 피드백으로 기준선이나 문구만 고치고 싶을 때 이 배열만 손대면 된다.
+   기준선은 0~3세 실제 조합을 돌려 잡았다 — 3세·짧은 외출이 40 안팎,
+   12개월·3시간 표준이 70 안팎, 한겨울 8시간 최대치가 110 안팎이다. */
+const BAG_TIERS = [
+  {max:30,       label:'작은 크로스백이면 충분해요'},
+  {max:55,       label:'에코백이나 작은 백팩이면 돼요'},
+  {max:90,       label:'기본 기저귀 가방이면 딱이에요'},
+  {max:Infinity, label:'기저귀 가방에 보조 가방을 하나 더 챙기세요'}
+];
+const bagRecommend = total =>
+  (BAG_TIERS.find(t=>total<=t.max) || BAG_TIERS[BAG_TIERS.length-1]).label;
 
 const S = {
   birth:'', startT:'10:00', hours:3, temp:22, sky:'맑음',
@@ -496,6 +519,19 @@ function adjustedQty(it,c){
   return {value:Math.max(1, q.value + qtyAdj(it.id)), unit:q.unit};
 }
 const qtyAdj = id => (S.qtyAdjust && S.qtyAdjust[id]) || 0;
+
+/* 조건에 맞는 항목 전체의 부피 합계. 체크 여부는 보지 않는다 —
+   "어떤 가방을 들지"는 짐을 싸기 전에 정하는 것이라 다 담긴 상태를 기준으로 해야 한다.
+   기여도 = vol × 수량. 수량은 개인 보정치까지 반영한 값을 쓴다.
+   vol이 없는 항목(아기띠·유모차·카시트 쿠션)은 0, 셀 수 없는 항목('파우치')은 vol 그대로. */
+function bagVolume(hit,c){
+  return hit.reduce((sum,it)=>{
+    if(typeof it.vol!=='number') return sum;
+    const q=adjustedQty(it,c);
+    const n=(q && typeof q.value==='number') ? q.value : 1;
+    return sum + it.vol*n;
+  },0);
+}
 
 /* +/- 한 번. 보정치를 무한정 음수로 키우지 않으려고 "원하는 결과값 - 기본값"으로
    되계산한다. 결과가 1 밑으로는 내려가지 않는다(상한은 없다). */
@@ -662,6 +698,9 @@ function renderList(){
   const c=ctx();
   const hit = ITEMS.filter(i=>!i.when || i.when(c));
   const box=$('#list'); box.innerHTML='';
+
+  // 가방 추천 — 조건이 바뀌거나 수량을 보정할 때마다 여기서 다시 계산된다
+  $('#bagRec').textContent = hit.length ? '가방: '+bagRecommend(bagVolume(hit,c)) : '';
 
   if(!hit.length){ box.innerHTML='<div class="empty">출동 조건을 알려주세요</div>'; return; }
 
