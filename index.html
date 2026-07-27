@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2F6B4F">
+<title>오늘도 출동 — 영유아 외출 준비물</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet">
+<style>
+:root{
+  --paper:#EDF0EC;
+  --card:#FFFFFF;
+  --ink:#17231C;
+  --muted:#67766D;
+  --line:#DDE3DC;
+  --moss:#2F6B4F;
+  --moss-soft:#E4EFE6;
+  --sprout:#7FB069;
+  --amber:#D98E2B;
+  --amber-soft:#FBF0DC;
+  --r:14px;
+  --sans:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+  --num:"Space Grotesk",var(--sans);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper);color:var(--ink);font-family:var(--sans);
+  font-size:15px;line-height:1.55;letter-spacing:-.01em;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.wrap{max-width:560px;margin:0 auto;padding:0 16px 96px}
+
+/* ---------- header ---------- */
+.top{padding:22px 0 14px;display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.top h1{margin:0;font-size:23px;font-weight:800;letter-spacing:-.035em}
+.top p{margin:3px 0 0;font-size:12.5px;color:var(--muted)}
+.ghost{
+  background:none;border:1px solid var(--line);color:var(--muted);
+  border-radius:999px;padding:7px 13px;font-size:12.5px;font-family:inherit;
+  font-weight:600;cursor:pointer;white-space:nowrap
+}
+.ghost:hover{border-color:var(--moss);color:var(--moss)}
+
+/* ---------- cards ---------- */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:12px}
+.eyebrow{
+  font-family:var(--num);font-size:10.5px;font-weight:700;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted);margin:0 0 12px
+}
+
+/* ---------- form rows ---------- */
+.row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
+.row:first-of-type{border-top:none;padding-top:0}
+.row>label{flex:0 0 62px;font-size:13px;font-weight:600;color:var(--muted)}
+.row>.ctl{flex:1;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+input[type=text],input[type=date],input[type=time],input[type=number],select{
+  font-family:inherit;font-size:14px;color:var(--ink);background:var(--paper);
+  border:1px solid transparent;border-radius:9px;padding:8px 10px;min-width:0;
+}
+input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--moss);outline-offset:2px}
+.chip{
+  font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;
+  background:var(--paper);border:1px solid transparent;color:var(--muted);
+  border-radius:999px;padding:7px 13px;transition:.14s
+}
+.chip[aria-pressed=true]{background:var(--moss);border-color:var(--moss);color:#fff}
+.stepper{display:flex;align-items:center;gap:2px;background:var(--paper);border-radius:9px;padding:2px}
+.stepper button{width:30px;height:30px;border:none;background:none;font-size:17px;color:var(--muted);cursor:pointer;font-family:var(--num)}
+.stepper span{font-family:var(--num);font-weight:700;font-size:14px;min-width:44px;text-align:center}
+.hint{font-size:12px;color:var(--muted)}
+
+/* ---------- SIGNATURE: bag gauge ---------- */
+.bag{
+  position:sticky;top:0;z-index:20;margin:0 -16px 12px;padding:11px 16px;
+  background:rgba(237,240,236,.93);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line)
+}
+.bag-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:8px}
+.bag-title{font-size:13px;font-weight:700}
+.bag-count{font-family:var(--num);font-size:13px;font-weight:700;color:var(--moss)}
+.bag-count em{font-style:normal;color:var(--muted);font-weight:500}
+.track{height:9px;background:var(--card);border:1px solid var(--line);border-radius:99px;overflow:hidden}
+.fill{
+  height:100%;width:0;border-radius:99px;
+  background:linear-gradient(90deg,var(--sprout),var(--moss));
+  transition:width .45s cubic-bezier(.22,1,.36,1)
+}
+.bag.done .fill{background:var(--moss)}
+.bag-msg{margin-top:7px;font-size:12px;color:var(--muted)}
+.bag.done .bag-msg{color:var(--moss);font-weight:600}
+
+/* ---------- checklist ---------- */
+.group{margin-bottom:6px}
+.group-h{
+  display:flex;align-items:baseline;gap:8px;padding:16px 2px 7px
+}
+.group-h b{font-size:14px;font-weight:700;letter-spacing:-.02em}
+.group-h i{font-family:var(--num);font-style:normal;font-size:11px;color:var(--muted);font-weight:500}
+.item{
+  display:flex;align-items:flex-start;gap:11px;background:var(--card);
+  border:1px solid var(--line);border-radius:11px;padding:12px 13px;margin-bottom:6px;
+  cursor:pointer;transition:.14s
+}
+.item:hover{border-color:#c7d2c6}
+.item.on{background:var(--moss-soft);border-color:#c7dfcb}
+.box{
+  flex:0 0 20px;height:20px;margin-top:1px;border:1.5px solid #B9C4BA;border-radius:6px;
+  display:grid;place-items:center;transition:.14s
+}
+.item.on .box{background:var(--moss);border-color:var(--moss)}
+.box svg{width:12px;height:12px;opacity:0;transform:scale(.6);transition:.16s}
+.item.on .box svg{opacity:1;transform:scale(1)}
+.item-body{flex:1;min-width:0}
+.item-name{font-size:14.5px;font-weight:600;letter-spacing:-.02em}
+.item.on .item-name{color:var(--moss)}
+.item-why{font-size:12px;color:var(--muted);margin-top:2px}
+.qty{
+  flex:0 0 auto;font-family:var(--num);font-size:12.5px;font-weight:700;
+  background:var(--paper);color:var(--ink);border-radius:7px;padding:4px 8px;margin-top:1px
+}
+.item.on .qty{background:#fff;color:var(--moss)}
+.qty.warn{background:var(--amber-soft);color:var(--amber)}
+.stock{opacity:.5}
+.empty{text-align:center;padding:36px 16px;color:var(--muted);font-size:13.5px}
+
+/* ---------- presets / footer ---------- */
+.preset{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:11px 0;border-top:1px solid var(--line);cursor:pointer
+}
+.preset:first-of-type{border-top:none}
+.preset-n{font-size:14px;font-weight:600}
+.preset-d{font-size:12px;color:var(--muted)}
+.stars{font-family:var(--num);font-size:12px;color:var(--amber);font-weight:700;white-space:nowrap}
+.actions{display:flex;gap:8px;margin-top:14px}
+.btn{
+  flex:1;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer;
+  border-radius:10px;padding:12px;border:1px solid var(--moss);
+  background:var(--moss);color:#fff
+}
+.btn.alt{background:transparent;color:var(--moss)}
+.toast{
+  position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);
+  background:var(--ink);color:#fff;font-size:13px;font-weight:600;
+  padding:11px 18px;border-radius:999px;opacity:0;pointer-events:none;transition:.25s;z-index:60
+}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <div>
+      <h1>오늘도 출동</h1>
+      <p>영유아 외출 준비물 — 오늘 챙길 것만 딱</p>
+    </div>
+    <button class="ghost" id="btnProfile">아이 정보</button>
+  </div>
+
+  <!-- 조건 입력 -->
+  <section class="card" id="conditions">
+    <p class="eyebrow">Briefing</p>
+
+    <div class="row">
+      <label for="birth">아이</label>
+      <div class="ctl">
+        <input type="date" id="birth" aria-label="생년월일">
+        <span class="hint" id="ageOut">생년월일을 넣으면 월령이 계산돼요</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <label for="start">출발</label>
+      <div class="ctl">
+        <input type="time" id="start" value="10:00">
+        <div class="stepper">
+          <button type="button" id="hMinus" aria-label="외출 시간 줄이기">−</button>
+          <span id="hOut">3시간</span>
+          <button type="button" id="hPlus" aria-label="외출 시간 늘리기">+</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <label>장소</label>
+      <div class="ctl" id="places"></div>
+    </div>
+
+    <div class="row">
+      <label>이동</label>
+      <div class="ctl" id="transport"></div>
+    </div>
+
+    <div class="row">
+      <label for="temp">날씨</label>
+      <div class="ctl">
+        <input type="number" id="temp" value="22" min="-20" max="45" style="width:70px" aria-label="기온">
+        <span class="hint">℃</span>
+        <div class="ctl" id="sky" style="flex:0 1 auto"></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <label>수유</label>
+      <div class="ctl" id="feeding"></div>
+    </div>
+  </section>
+
+  <!-- 가방 게이지 -->
+  <div class="bag" id="bag">
+    <div class="bag-head">
+      <span class="bag-title">보급품 점검</span>
+      <span class="bag-count"><span id="cDone">0</span><em> / <span id="cAll">0</span></em></span>
+    </div>
+    <div class="track"><div class="fill" id="fill"></div></div>
+    <div class="bag-msg" id="bagMsg">출동 조건을 입력하면 목록이 만들어져요</div>
+  </div>
+
+  <div id="list"></div>
+
+  <!-- 프리셋 -->
+  <section class="card" style="margin-top:20px">
+    <p class="eyebrow">Missions</p>
+    <div id="presets"></div>
+    <div class="actions">
+      <button class="btn alt" id="btnSave">이 임무 저장</button>
+      <button class="btn" id="btnShare">임무 공유하기</button>
+    </div>
+  </section>
+
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================
+   1. 저장소 어댑터  — 나중에 이 객체만 Supabase로 교체하면 됨
+   ========================================================= */
+const Store = {
+  async get(k){
+    try{
+      if(window.storage){ const r = await window.storage.get(k); return r ? JSON.parse(r.value) : null; }
+      const v = localStorage.getItem(k); return v ? JSON.parse(v) : null;
+    }catch(e){ return null; }
+  },
+  async set(k,v){
+    try{
+      if(window.storage){ await window.storage.set(k, JSON.stringify(v)); return; }
+      localStorage.setItem(k, JSON.stringify(v));
+    }catch(e){}
+  }
+};
+
+/* =========================================================
+   2. 규칙 엔진 — 앱의 심장. 아이템마다 조건 + 수량식을 붙인다
+   ctx = {ageM, hours, startH, endH, temp, sky, places[], transport, feeding, month}
+   ========================================================= */
+const CATS = ['기저귀·위생','수유·식사','옷·체온','달래기','안전·응급','부모용'];
+const nz = n => Math.max(1, Math.round(n));
+const overlaps = (ctx,a,b) => ctx.startH < b && ctx.endH > a;   // 식사시간대와 겹치는지
+const out = ctx => ctx.places.includes('야외');
+
+const ITEMS = [
+  // ── 기저귀·위생
+  {id:'diaper', c:0, n:'기저귀', when:c=>c.ageM<=36,
+   q:c=>nz(c.hours/2)+2+'장', why:c=>`2시간에 1장 + 여분 2장`},
+  {id:'nightdiaper', c:0, n:'밤기저귀', when:c=>c.ageM<=36 && c.endH>=20, q:()=>'1장', why:()=>'귀가가 늦어요'},
+  {id:'wipe', c:0, n:'물티슈', when:c=>c.ageM<=60, q:c=>c.hours>4?'2팩':'1팩'},
+  {id:'mat', c:0, n:'방수 기저귀 매트', when:c=>c.ageM<=24 && c.places.length>0},
+  {id:'bag', c:0, n:'지퍼백 / 비닐봉투', q:()=>'3장', why:()=>'오염된 옷·기저귀 담기'},
+  {id:'sanit', c:0, n:'손 소독제', when:c=>c.places.includes('식당')||c.places.includes('실내놀이')},
+  {id:'potty', c:0, n:'휴대용 변기커버', when:c=>c.ageM>=24 && c.ageM<=60, why:()=>'배변 가리는 시기'},
+
+  // ── 수유·식사
+  {id:'bottle', c:1, n:'젖병', when:c=>c.ageM<=15 && c.feeding!=='모유', q:c=>Math.min(3,nz(c.hours/3.5))+'개'},
+  {id:'formula', c:1, n:'분유 포션', when:c=>c.ageM<=15 && c.feeding!=='모유', q:c=>nz(c.hours/3.5)+'회분'},
+  {id:'thermos', c:1, n:'보온병(따뜻한 물)', when:c=>c.ageM<=15 && c.feeding!=='모유'},
+  {id:'cover', c:1, n:'수유 가리개', when:c=>c.feeding!=='분유' && c.ageM<=15 && c.places.length>0},
+  {id:'babyfood', c:1, n:'이유식 + 스푼', when:c=>c.ageM>=6 && c.ageM<=18 && (overlaps(c,11,13.5)||overlaps(c,17,19.5)),
+   q:c=>(overlaps(c,11,13.5)&&overlaps(c,17,19.5))?'2끼':'1끼', why:()=>'식사 시간대에 걸쳐요'},
+  {id:'snack', c:1, n:'간식', when:c=>c.ageM>=8, q:c=>c.hours>3?'2봉':'1봉', why:()=>'기다릴 때 최고의 무기'},
+  {id:'cup', c:1, n:'빨대컵 / 물통', when:c=>c.ageM>=6},
+  {id:'bib', c:1, n:'턱받이', when:c=>c.ageM>=5 && c.ageM<=30},
+  {id:'chaircover', c:1, n:'휴대용 아기의자 벨트', when:c=>c.places.includes('식당') && c.ageM>=6 && c.ageM<=36},
+
+  // ── 옷·체온
+  {id:'spare', c:2, n:'여벌 옷', when:c=>c.ageM<=60, q:c=>(c.hours>3?'2벌':'1벌')},
+  {id:'sock', c:2, n:'여벌 양말', when:c=>c.ageM<=60},
+  {id:'outer', c:2, n:'얇은 겉옷', when:c=>c.temp>=15 && c.temp<24, why:()=>'실내 냉방 대비'},
+  {id:'warm', c:2, n:'방한복·장갑', when:c=>c.temp<8},
+  {id:'blanket', c:2, n:'담요 / 속싸개', when:c=>c.ageM<=18 && c.temp<24},
+  {id:'hat', c:2, n:'모자', when:c=>out(c) && (c.temp>=23||c.temp<=8)},
+  {id:'sun', c:2, n:'선크림', when:c=>out(c) && c.ageM>=6 && c.temp>=16 && c.sky==='맑음'},
+  {id:'rain', c:2, n:'우비 / 유모차 레인커버', when:c=>c.sky==='비'},
+  {id:'fan', c:2, n:'휴대용 선풍기', when:c=>c.temp>=28},
+  {id:'mosq', c:2, n:'모기 기피제', when:c=>out(c) && c.temp>=20 && c.month>=5 && c.month<=9},
+
+  // ── 달래기
+  {id:'teether', c:3, n:'치발기 / 딸랑이', when:c=>c.ageM<=18},
+  {id:'doll', c:3, n:'애착 인형·이불', when:c=>c.ageM>=6 && c.ageM<=60},
+  {id:'sticker', c:3, n:'스티커북 / 그림책', when:c=>c.ageM>=18 && (c.places.includes('식당')||c.transport==='대중교통')},
+  {id:'newtoy', c:3, n:'새 장난감 하나', when:c=>c.hours>=4 && c.ageM>=8, why:()=>'후반부에 꺼낼 비장의 카드'},
+
+  // ── 안전·응급
+  {id:'fever', c:4, n:'해열제 + 계량스푼', when:c=>c.ageM<=72},
+  {id:'thermo', c:4, n:'체온계', when:c=>c.ageM<=72 && c.hours>=4},
+  {id:'kit', c:4, n:'밴드·소독솜', q:()=>'파우치'},
+  {id:'card', c:4, n:'아기수첩 / 보험증', when:c=>c.places.includes('병원')},
+  {id:'carrier', c:4, n:'아기띠', when:c=>c.ageM<=30 && c.transport!=='자차'},
+  {id:'stroller', c:4, n:'유모차', when:c=>c.ageM<=42 && c.hours>=2},
+  {id:'carseat', c:4, n:'카시트 목쿠션', when:c=>c.transport==='자차' && c.ageM<=24},
+
+  // ── 부모용
+  {id:'battery', c:5, n:'보조 배터리', when:c=>c.hours>=4},
+  {id:'wallet', c:5, n:'지갑·카드·차키'},
+  {id:'mybottle', c:5, n:'엄마아빠 물병', when:c=>c.feeding!=='분유'&&c.feeding!=='유아식', why:()=>'수유 중엔 탈수가 빨라요'},
+  {id:'tissue', c:5, n:'손수건 2장'}
+];
+
+/* =========================================================
+   3. 상태
+   ========================================================= */
+const PLACES = ['실내놀이','야외','식당','병원','마트'];
+const TRANSPORT = ['도보','자차','대중교통'];
+const SKY = ['맑음','흐림','비','눈'];
+const FEEDING = ['모유','분유','혼합','유아식'];
+
+const S = {
+  birth:'', startT:'10:00', hours:3, temp:22, sky:'맑음',
+  places:['야외'], transport:'도보', feeding:'혼합',
+  checked:{}, stock:{}
+};
+
+const $ = s => document.querySelector(s);
+const toast = m => { const t=$('#toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1800); };
+
+function ageMonths(){
+  if(!S.birth) return null;
+  const b=new Date(S.birth), n=new Date();
+  return Math.max(0,(n.getFullYear()-b.getFullYear())*12 + (n.getMonth()-b.getMonth()) - (n.getDate()<b.getDate()?1:0));
+}
+function ctx(){
+  const [h,m]=S.startT.split(':').map(Number);
+  const sh=h+m/60;
+  return {ageM:ageMonths()??12, hours:S.hours, startH:sh, endH:sh+S.hours,
+          temp:+S.temp, sky:S.sky, places:S.places, transport:S.transport,
+          feeding:S.feeding, month:new Date().getMonth()+1};
+}
+
+/* =========================================================
+   4. 렌더링
+   ========================================================= */
+function chipGroup(el, opts, get, set, multi){
+  el.innerHTML='';
+  opts.forEach(o=>{
+    const b=document.createElement('button');
+    b.type='button'; b.className='chip'; b.textContent=o;
+    const on = multi ? get().includes(o) : get()===o;
+    b.setAttribute('aria-pressed', on);
+    b.onclick=()=>{
+      if(multi){
+        const v=get(); const i=v.indexOf(o);
+        i<0 ? v.push(o) : v.splice(i,1);
+        set(v);
+      } else set(o);
+      render(); save();
+    };
+    el.appendChild(b);
+  });
+}
+
+function renderForm(){
+  $('#birth').value=S.birth; $('#start').value=S.startT; $('#temp').value=S.temp;
+  $('#hOut').textContent=S.hours+'시간';
+  const a=ageMonths();
+  $('#ageOut').textContent = a===null ? '생년월일을 넣으면 월령이 계산돼요'
+    : (a>=24 ? `만 ${Math.floor(a/12)}세 ${a%12}개월` : `${a}개월`);
+  chipGroup($('#places'),PLACES,()=>S.places,v=>S.places=v,true);
+  chipGroup($('#transport'),TRANSPORT,()=>S.transport,v=>S.transport=v);
+  chipGroup($('#sky'),SKY,()=>S.sky,v=>S.sky=v);
+  chipGroup($('#feeding'),FEEDING,()=>S.feeding,v=>S.feeding=v);
+}
+
+function renderList(){
+  const c=ctx();
+  const hit = ITEMS.filter(i=>!i.when || i.when(c));
+  const box=$('#list'); box.innerHTML='';
+
+  if(!hit.length){ box.innerHTML='<div class="empty">출동 조건을 알려주세요</div>'; return; }
+
+  CATS.forEach((cat,ci)=>{
+    const rows=hit.filter(i=>i.c===ci);
+    if(!rows.length) return;
+    const g=document.createElement('div'); g.className='group';
+    const h=document.createElement('div'); h.className='group-h';
+    h.innerHTML=`<b>${cat}</b><i>${rows.length}</i>`;
+    g.appendChild(h);
+
+    rows.forEach(it=>{
+      const on=!!S.checked[it.id], stk=!!S.stock[it.id];
+      const el=document.createElement('div');
+      el.className='item'+(on?' on':'')+(stk?' stock':'');
+      el.setAttribute('role','checkbox');
+      el.setAttribute('aria-checked',on);
+      el.tabIndex=0;
+      const q=it.q?it.q(c):null;
+      const why=it.why?it.why(c):null;
+      el.innerHTML=`
+        <div class="box"><svg viewBox="0 0 12 12" fill="none"><path d="M2 6.2 4.6 8.8 10 3.4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="item-body">
+          <div class="item-name">${it.n}</div>
+          ${why?`<div class="item-why">${why}</div>`:''}
+        </div>
+        ${q?`<span class="qty${/여분|비장|늦/.test(why||'')?' warn':''}">${q}</span>`:''}`;
+      const flip=()=>{ S.checked[it.id]=!S.checked[it.id]; render(); save(); };
+      el.onclick=flip;
+      el.onkeydown=e=>{ if(e.key===' '||e.key==='Enter'){ e.preventDefault(); flip(); } };
+      g.appendChild(el);
+    });
+    box.appendChild(g);
+  });
+
+  // 게이지
+  const done=hit.filter(i=>S.checked[i.id]).length;
+  $('#cDone').textContent=done; $('#cAll').textContent=hit.length;
+  $('#fill').style.width=(hit.length?done/hit.length*100:0)+'%';
+  const bag=$('#bag'), left=hit.length-done;
+  bag.classList.toggle('done', left===0);
+  $('#bagMsg').textContent = left===0 ? '대장님 출동 준비 끝! 조심히 다녀오세요' : `보급품 ${left}개 남았어요`;
+}
+
+const render=()=>{ renderForm(); renderList(); };
+
+/* =========================================================
+   5. 공유 — 서버 없이 URL 해시로 킷 전달 (MVP 단계용)
+   ========================================================= */
+function encode(){
+  const p={b:S.birth,s:S.startT,h:S.hours,t:S.temp,k:S.sky,pl:S.places,tr:S.transport,f:S.feeding};
+  return btoa(encodeURIComponent(JSON.stringify(p)));
+}
+function decode(str){
+  try{
+    const p=JSON.parse(decodeURIComponent(atob(str)));
+    Object.assign(S,{birth:p.b,startT:p.s,hours:p.h,temp:p.t,sky:p.k,places:p.pl,transport:p.tr,feeding:p.f});
+    return true;
+  }catch(e){ return false; }
+}
+
+/* =========================================================
+   6. 임무 목록 — 사용자 0명일 때의 콜드스타트 대비
+   ========================================================= */
+const PRESETS=[
+  {n:'한여름 공원 출동', d:'12개월 · 야외 · 2시간 · 29℃', r:4.6, v:128,
+   s:{hours:2,temp:29,sky:'맑음',places:['야외'],transport:'도보',feeding:'혼합'}},
+  {n:'주말 장보기 출동', d:'20개월 · 마트 · 2시간 · 22℃', r:4.3, v:86,
+   s:{hours:2,temp:22,sky:'흐림',places:['마트'],transport:'자차',feeding:'유아식'}},
+  {n:'외식 한 끼 버티기', d:'18개월 · 식당 · 점심 · 3시간', r:4.8, v:204,
+   s:{startT:'11:30',hours:3,temp:20,sky:'흐림',places:['식당'],transport:'자차',feeding:'유아식'}},
+  {n:'소아과 정기검진', d:'8개월 · 병원 · 2시간', r:4.1, v:57,
+   s:{hours:2,temp:18,sky:'흐림',places:['병원'],transport:'자차',feeding:'분유'}},
+  {n:'한겨울 장거리 이동', d:'15개월 · 대중교통 · 5시간 · 2℃', r:4.5, v:73,
+   s:{hours:5,temp:2,sky:'눈',places:['실내놀이'],transport:'대중교통',feeding:'혼합'}}
+];
+
+function renderPresets(){
+  const box=$('#presets'); box.innerHTML='';
+  PRESETS.forEach(p=>{
+    const el=document.createElement('div'); el.className='preset'; el.tabIndex=0; el.setAttribute('role','button');
+    el.innerHTML=`<div><div class="preset-n">${p.n}</div><div class="preset-d">${p.d}</div></div>
+                  <span class="stars">★ ${p.r} <em style="font-style:normal;color:var(--muted);font-weight:500">(${p.v})</em></span>`;
+    const apply=()=>{ Object.assign(S,p.s); S.checked={}; render(); save(); toast('임무를 불러왔어요'); window.scrollTo({top:0,behavior:'smooth'}); };
+    el.onclick=apply;
+    el.onkeydown=e=>{ if(e.key==='Enter'){apply();} };
+    box.appendChild(el);
+  });
+}
+
+/* =========================================================
+   7. 배선
+   ========================================================= */
+const save=()=>Store.set('rollout:v1',S);
+
+$('#birth').onchange=e=>{S.birth=e.target.value;render();save();};
+$('#start').onchange=e=>{S.startT=e.target.value;render();save();};
+$('#temp').oninput=e=>{S.temp=e.target.value;render();save();};
+$('#hMinus').onclick=()=>{S.hours=Math.max(1,S.hours-1);render();save();};
+$('#hPlus').onclick=()=>{S.hours=Math.min(12,S.hours+1);render();save();};
+$('#btnProfile').onclick=()=>{ $('#birth').focus(); window.scrollTo({top:0,behavior:'smooth'}); };
+$('#btnSave').onclick=async()=>{ await save(); toast('이 임무를 저장했어요'); };
+$('#btnShare').onclick=async()=>{
+  const url=location.origin+location.pathname+'#k='+encode();
+  try{ await navigator.clipboard.writeText(url); toast('공유 링크를 복사했어요'); }
+  catch(e){ prompt('이 링크를 복사하세요',url); }
+};
+
+(async function init(){
+  const saved=await Store.get('babybag:v1');
+  if(saved) Object.assign(S,saved);
+  if(location.hash.startsWith('#k=')&&decode(location.hash.slice(3))) S.checked={};
+  renderPresets(); render();
+})();
+</script>
+</body>
+</html>

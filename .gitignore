@@ -1,0 +1,17 @@
+# 절대 커밋하면 안 되는 것들
+.env
+.env.*
+secrets.*
+*.secret.js
+
+# sb_publishable_ 키는 커밋해도 됩니다 (브라우저 코드라 어차피 공개됨).
+# 여기서 막으려는 건 sb_secret_ 키와 DB 비밀번호입니다.
+
+# OS / 에디터
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# 의존성 (지금은 안 쓰지만 나중을 위해)
+node_modules/
