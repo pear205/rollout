@@ -153,6 +153,17 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
   padding:11px 18px;border-radius:999px;opacity:0;pointer-events:none;transition:.25s;z-index:60
 }
 .toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* ---------- in-app dialog — prompt()/confirm() 대체 ----------
+   토스트(z-index:60)보다 위에 떠야 한다. 색·라운드·버튼은 전부 기존 토큰 재사용 */
+.modal-back{
+  position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;
+  padding:20px;background:rgba(23,35,28,.45);backdrop-filter:blur(3px)
+}
+.modal{width:100%;max-width:340px;margin:0;max-height:calc(100vh - 40px);overflow-y:auto}
+/* publishKit 메시지에 줄바꿈이 들어 있어 pre-line이 필요하다 */
+.modal-msg{margin:0;font-size:14.5px;font-weight:600;letter-spacing:-.02em;white-space:pre-line}
+.modal-input{width:100%;margin-top:12px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -462,6 +473,92 @@ function ctx(){
 }
 
 /* =========================================================
+   3-B. 인앱 다이얼로그 — prompt()/confirm() 대체
+   모바일 브라우저·인앱 브라우저(카카오톡·네이버 등)·PWA standalone에서는
+   window.prompt()/confirm()이 에러 없이 조용히 차단되거나 즉시 null을 준다.
+   그래서 사용자에겐 "버튼이 죽은 것"처럼 보였다 → 직접 그린다.
+     askText(msg, def) → Promise<string|null>  (취소 null — prompt와 동일한 계약)
+     askConfirm(msg)   → Promise<boolean>
+   ========================================================= */
+function openDialog(message, withInput, defaultValue){
+  return new Promise(resolve=>{
+    const back=document.createElement('div');
+    back.className='modal-back';
+    back.setAttribute('role','dialog');
+    back.setAttribute('aria-modal','true');
+
+    const card=document.createElement('div');
+    card.className='card modal';
+
+    const msg=document.createElement('p');
+    msg.className='modal-msg';
+    msg.id='dlgMsg';
+    msg.textContent=message;                 // textContent — 사용자 문구가 들어와도 안전하다
+    back.setAttribute('aria-labelledby','dlgMsg');
+    card.appendChild(msg);
+
+    let input=null;
+    if(withInput){
+      input=document.createElement('input');
+      input.type='text';
+      input.className='modal-input';
+      input.value = defaultValue==null ? '' : String(defaultValue);
+      card.appendChild(input);
+    }
+
+    const acts=document.createElement('div'); acts.className='actions';
+    const cancel=document.createElement('button');
+    cancel.type='button'; cancel.className='btn alt'; cancel.textContent='취소';
+    const ok=document.createElement('button');
+    ok.type='button'; ok.className='btn'; ok.textContent='확인';
+    acts.appendChild(cancel); acts.appendChild(ok);
+    card.appendChild(acts);
+    back.appendChild(card);
+
+    const prevOverflow=document.body.style.overflow;
+    const prevFocus=document.activeElement;
+    let closed=false;
+
+    function close(v){
+      if(closed) return;
+      closed=true;
+      document.removeEventListener('keydown', onKey, true);
+      back.remove();
+      document.body.style.overflow=prevOverflow;
+      try{ if(prevFocus && prevFocus.focus) prevFocus.focus(); }catch(e){}
+      resolve(v);
+    }
+    // 취소 시 prompt는 null, confirm은 false — 네이티브 계약을 그대로 지킨다
+    const accept=()=>close(withInput ? input.value : true);
+    const reject=()=>close(withInput ? null : false);
+
+    function onKey(e){
+      if(e.key==='Escape'){ e.preventDefault(); reject(); return; }
+      if(e.key==='Enter' && withInput && e.target===input){ e.preventDefault(); accept(); return; }
+      if(e.key==='Tab'){                       // 포커스가 모달 밖으로 새지 않게
+        const f=[input,cancel,ok].filter(Boolean);
+        const i=f.indexOf(document.activeElement);
+        if(i<0){ e.preventDefault(); f[0].focus(); return; }
+        const n=e.shiftKey ? (i-1+f.length)%f.length : (i+1)%f.length;
+        e.preventDefault(); f[n].focus();
+      }
+    }
+    ok.onclick=accept;
+    cancel.onclick=reject;
+    back.onclick=e=>{ if(e.target===back) reject(); };   // 바깥 탭 = 취소
+    document.addEventListener('keydown', onKey, true);
+
+    document.body.appendChild(back);
+    document.body.style.overflow='hidden';
+    // 입력이 있으면 바로 타이핑할 수 있게 입력창에 포커스(네이티브 prompt와 같은 감각),
+    // 확인 다이얼로그는 확인 버튼에 포커스
+    if(input){ input.focus(); input.select(); } else { ok.focus(); }
+  });
+}
+const askText    = (message, defaultValue) => openDialog(message, true, defaultValue);
+const askConfirm = message => openDialog(message, false);
+
+/* =========================================================
    4. 렌더링
    ========================================================= */
 function chipGroup(el, opts, get, set, multi){
@@ -694,7 +791,7 @@ async function saveKit(){
   if(!sb || !session){ toast('로그인하면 임무를 저장할 수 있어요'); return; }
   const c=ctx();
   const suggest=(S.places.length ? S.places.join('·') : '오늘')+' 출동';
-  const raw=prompt('임무 이름을 알려주세요', suggest);
+  const raw=await askText('임무 이름을 알려주세요', suggest);
   if(raw===null) return;                       // 취소
   const title=raw.trim();
   if(!title){ toast('임무 이름을 적어주세요'); return; }
@@ -723,7 +820,7 @@ async function saveKit(){
 
 async function removeKit(k){
   if(!sb || !session) return;
-  if(!confirm(`‘${k.title}’ 임무를 지울까요?`)) return;
+  if(!(await askConfirm(`‘${k.title}’ 임무를 지울까요?`))) return;
   try{
     const {error}=await sb.from('kits').delete().eq('id', k.id);
     if(error) throw error;
@@ -739,7 +836,7 @@ async function removeKit(k){
    RLS의 "내 킷만 수정" 정책이 남의 킷 공개를 막아준다. */
 async function publishKit(k){
   if(!sb || !session) return;
-  if(!confirm(`‘${k.title}’ 임무를 공개할까요?\n다른 부모가 보고 별점을 줄 수 있어요. 되돌리려면 임무를 지워야 해요.`)) return;
+  if(!(await askConfirm(`‘${k.title}’ 임무를 공개할까요?\n다른 부모가 보고 별점을 줄 수 있어요. 되돌리려면 임무를 지워야 해요.`))) return;
   try{
     const {error}=await sb.from('kits').update({is_public:true}).eq('id', k.id);
     if(error) throw error;
@@ -918,7 +1015,8 @@ $('#btnSaveKit').onclick=saveKit;
 $('#btnShare').onclick=async()=>{
   const url=location.origin+location.pathname+'#k='+encode();
   try{ await navigator.clipboard.writeText(url); toast('공유 링크를 복사했어요'); }
-  catch(e){ prompt('이 링크를 복사하세요',url); }
+  // 클립보드가 막히는 환경은 네이티브 prompt도 같이 막히는 경우가 많다 → 인앱 모달로 보여준다
+  catch(e){ await askText('이 링크를 복사하세요', url); }
 };
 
 /* 대기 중인 클라우드 쓰기를 놓치지 않기 위한 안전망 — 디바운스 타이머를
