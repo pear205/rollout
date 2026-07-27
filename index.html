@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#2F6B4F">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="오늘도 출동">
 <title>오늘도 출동 — 영유아 외출 준비물</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -227,6 +231,12 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
 
   <div id="list"></div>
 
+  <!-- 내 임무 — 로그인했을 때만 보인다 -->
+  <section class="card" id="myKits" style="margin-top:20px" hidden>
+    <p class="eyebrow">My Missions</p>
+    <div id="kits"></div>
+  </section>
+
   <!-- 프리셋 -->
   <section class="card" style="margin-top:20px">
     <p class="eyebrow">Missions</p>
@@ -234,6 +244,9 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
     <div class="actions">
       <button class="btn alt" id="btnSave">이 임무 저장</button>
       <button class="btn" id="btnShare">임무 공유하기</button>
+    </div>
+    <div class="actions">
+      <button class="btn alt" id="btnSaveKit">임무로 저장</button>
     </div>
   </section>
 
@@ -258,6 +271,11 @@ let nickname = '';     // profiles.nickname (버튼 라벨용)
    1. 저장소 어댑터
    로그인 O → profiles.settings (jsonb) / 로그인 X 또는 실패 → localStorage
    get(k)/set(k,v) 시그니처는 그대로. 앱의 나머지는 이걸 몰라도 된다.
+
+   체크박스 하나 누를 때마다 render()+save()가 실행된다. 로그인 상태에서
+   그때마다 profiles 테이블에 네트워크 쓰기를 보내면 연속 클릭에 렉·실패가
+   난다 → localStorage는 매번 즉시 쓰고(안전망), 클라우드 쓰기만 묶어서
+   (디바운스) 보낸다.
    ========================================================= */
 async function localGet(k){
   try{
@@ -270,6 +288,46 @@ async function localSet(k,v){
     if(window.storage){ await window.storage.set(k, JSON.stringify(v)); return; }
     localStorage.setItem(k, JSON.stringify(v));
   }catch(e){}
+}
+
+/* 클라우드(Supabase) 쓰기 — 실제 네트워크 호출은 이 함수 하나뿐이다.
+   실패해도 조용히 넘어간다. 로컬에는 이미 저장돼 있으므로 다음 저장 때
+   다시 시도된다. */
+async function cloudSet(v){
+  if(!(sb && session)) return;
+  try{
+    const uid = session.user.id;
+    // profiles 행은 가입 시 트리거가 만들어 두므로 update가 정상 경로다.
+    // (스키마상 authenticated에 insert 권한이 없어 upsert는 실패할 수 있다)
+    const {data,error} = await sb.from('profiles')
+      .update({settings:v}).eq('id', uid).select('id');
+    if(error) throw error;
+    if(!data || !data.length){          // 행이 없는 예외 상황에만 upsert 시도
+      const r = await sb.from('profiles').upsert({id:uid, settings:v}).select('id');
+      if(r.error) throw r.error;
+    }
+  }catch(e){ /* 실패해도 로컬 값은 남아 있다. 다음 save()에서 다시 시도된다 */ }
+}
+
+/* 클라우드 쓰기 디바운스. 이 앱은 실제로 키를 하나(KEY='rollout:v1')만
+   쓰므로 슬롯 하나로 충분하다 — 연속 호출은 마지막 값만 살아남는다(coalesce). */
+const CLOUD_SAVE_DELAY = 1200;
+let cloudSaveTimer = null;
+let cloudSavePending = null;   // 대기 중인 마지막 값. null이면 대기 없음
+
+function scheduleCloudSave(v){
+  cloudSavePending = v;
+  clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = setTimeout(flushCloudSave, CLOUD_SAVE_DELAY);
+}
+/* 대기 중인 클라우드 쓰기를 즉시 내보낸다. pagehide·화면 숨김·로그아웃
+   직전에 호출한다. 페이지가 그 순간 닫혀도 로컬에는 이미 값이 남아 있으므로
+   완료를 기다리지 않아도 된다(단, signOut 앞에서는 끝까지 기다린다). */
+function flushCloudSave(){
+  if(cloudSaveTimer!=null){ clearTimeout(cloudSaveTimer); cloudSaveTimer=null; }
+  if(cloudSavePending===null) return Promise.resolve();
+  const v=cloudSavePending; cloudSavePending=null;
+  return cloudSet(v);
 }
 
 const Store = {
@@ -290,22 +348,8 @@ const Store = {
     return localGet(k);
   },
   async set(k,v){
-    if(sb && session){
-      try{
-        const uid = session.user.id;
-        // profiles 행은 가입 시 트리거가 만들어 두므로 update가 정상 경로다.
-        // (스키마상 authenticated에 insert 권한이 없어 upsert는 실패할 수 있다)
-        const {data,error} = await sb.from('profiles')
-          .update({settings:v}).eq('id', uid).select('id');
-        if(error) throw error;
-        if(!data || !data.length){          // 행이 없는 예외 상황에만 upsert 시도
-          const r = await sb.from('profiles').upsert({id:uid, settings:v}).select('id');
-          if(r.error) throw r.error;
-        }
-        return;
-      }catch(e){ /* 실패하면 로컬에라도 남긴다 */ }
-    }
-    return localSet(k,v);
+    await localSet(k,v);                       // 즉시, 로그인 여부와 무관 — 안전망
+    if(sb && session) scheduleCloudSave(v);     // 클라우드는 디바운스해서 보낸다
   }
 };
 
@@ -318,31 +362,37 @@ const nz = n => Math.max(1, Math.round(n));
 const overlaps = (ctx,a,b) => ctx.startH < b && ctx.endH > a;   // 식사시간대와 겹치는지
 const out = ctx => ctx.places.includes('야외');
 
+/* 수량은 {value, unit} 구조로 다룬다. 계산·재계산·합산이 가능해야 하므로
+   표시용 문자열을 만드는 건 이 함수 한 곳에서만 한다.
+   value가 null이면 셀 수 없는 단위('파우치')라 단위만 보여준다. */
+const fmtQty = q => q==null ? '' : (q.value==null ? q.unit : q.value+q.unit);
+
 const ITEMS = [
   // ── 기저귀·위생
-  {id:'diaper', c:0, n:'기저귀', when:c=>c.ageM<=36,
-   q:c=>nz(c.hours/2)+2+'장', why:c=>`2시간에 1장 + 여분 2장`},
-  {id:'nightdiaper', c:0, n:'밤기저귀', when:c=>c.ageM<=36 && c.endH>=20, q:()=>'1장', why:()=>'귀가가 늦어요'},
-  {id:'wipe', c:0, n:'물티슈', when:c=>c.ageM<=60, q:c=>c.hours>4?'2팩':'1팩'},
+  {id:'diaper', c:0, n:'기저귀', when:c=>c.ageM<=36, warn:true,
+   q:c=>({value:nz(c.hours/2)+2, unit:'장'}), why:c=>`2시간에 1장 + 여분 2장`},
+  {id:'nightdiaper', c:0, n:'밤기저귀', when:c=>c.ageM<=36 && c.endH>=20, warn:true,
+   q:()=>({value:1, unit:'장'}), why:()=>'귀가가 늦어요'},
+  {id:'wipe', c:0, n:'물티슈', when:c=>c.ageM<=60, q:c=>({value:c.hours>4?2:1, unit:'팩'})},
   {id:'mat', c:0, n:'방수 기저귀 매트', when:c=>c.ageM<=24 && c.places.length>0},
-  {id:'bag', c:0, n:'지퍼백 / 비닐봉투', q:()=>'3장', why:()=>'오염된 옷·기저귀 담기'},
+  {id:'bag', c:0, n:'지퍼백 / 비닐봉투', q:()=>({value:3, unit:'장'}), why:()=>'오염된 옷·기저귀 담기'},
   {id:'sanit', c:0, n:'손 소독제', when:c=>c.places.includes('식당')||c.places.includes('실내놀이')},
   {id:'potty', c:0, n:'휴대용 변기커버', when:c=>c.ageM>=24 && c.ageM<=60, why:()=>'배변 가리는 시기'},
 
   // ── 수유·식사
-  {id:'bottle', c:1, n:'젖병', when:c=>c.ageM<=15 && c.feeding!=='모유', q:c=>Math.min(3,nz(c.hours/3.5))+'개'},
-  {id:'formula', c:1, n:'분유 포션', when:c=>c.ageM<=15 && c.feeding!=='모유', q:c=>nz(c.hours/3.5)+'회분'},
+  {id:'bottle', c:1, n:'젖병', when:c=>c.ageM<=15 && c.feeding!=='모유', q:c=>({value:Math.min(3,nz(c.hours/3.5)), unit:'개'})},
+  {id:'formula', c:1, n:'분유 포션', when:c=>c.ageM<=15 && c.feeding!=='모유', q:c=>({value:nz(c.hours/3.5), unit:'회분'})},
   {id:'thermos', c:1, n:'보온병(따뜻한 물)', when:c=>c.ageM<=15 && c.feeding!=='모유'},
   {id:'cover', c:1, n:'수유 가리개', when:c=>c.feeding!=='분유' && c.ageM<=15 && c.places.length>0},
   {id:'babyfood', c:1, n:'이유식 + 스푼', when:c=>c.ageM>=6 && c.ageM<=18 && (overlaps(c,11,13.5)||overlaps(c,17,19.5)),
-   q:c=>(overlaps(c,11,13.5)&&overlaps(c,17,19.5))?'2끼':'1끼', why:()=>'식사 시간대에 걸쳐요'},
-  {id:'snack', c:1, n:'간식', when:c=>c.ageM>=8, q:c=>c.hours>3?'2봉':'1봉', why:()=>'기다릴 때 최고의 무기'},
+   q:c=>({value:(overlaps(c,11,13.5)&&overlaps(c,17,19.5))?2:1, unit:'끼'}), why:()=>'식사 시간대에 걸쳐요'},
+  {id:'snack', c:1, n:'간식', when:c=>c.ageM>=8, q:c=>({value:c.hours>3?2:1, unit:'봉'}), why:()=>'기다릴 때 최고의 무기'},
   {id:'cup', c:1, n:'빨대컵 / 물통', when:c=>c.ageM>=6},
   {id:'bib', c:1, n:'턱받이', when:c=>c.ageM>=5 && c.ageM<=30},
   {id:'chaircover', c:1, n:'휴대용 아기의자 벨트', when:c=>c.places.includes('식당') && c.ageM>=6 && c.ageM<=36},
 
   // ── 옷·체온
-  {id:'spare', c:2, n:'여벌 옷', when:c=>c.ageM<=60, q:c=>(c.hours>3?'2벌':'1벌')},
+  {id:'spare', c:2, n:'여벌 옷', when:c=>c.ageM<=60, q:c=>({value:c.hours>3?2:1, unit:'벌'})},
   {id:'sock', c:2, n:'여벌 양말', when:c=>c.ageM<=60},
   {id:'outer', c:2, n:'얇은 겉옷', when:c=>c.temp>=15 && c.temp<24, why:()=>'실내 냉방 대비'},
   {id:'warm', c:2, n:'방한복·장갑', when:c=>c.temp<8},
@@ -362,7 +412,8 @@ const ITEMS = [
   // ── 안전·응급
   {id:'fever', c:4, n:'해열제 + 계량스푼', when:c=>c.ageM<=72},
   {id:'thermo', c:4, n:'체온계', when:c=>c.ageM<=72 && c.hours>=4},
-  {id:'kit', c:4, n:'밴드·소독솜', q:()=>'파우치'},
+  // 개수로 세지 않는 항목 — value 없이 단위만 (파우치째로 챙긴다)
+  {id:'kit', c:4, n:'밴드·소독솜', q:()=>({value:null, unit:'파우치'})},
   {id:'card', c:4, n:'아기수첩 / 보험증', when:c=>c.places.includes('병원')},
   {id:'carrier', c:4, n:'아기띠', when:c=>c.ageM<=30 && c.transport!=='자차'},
   {id:'stroller', c:4, n:'유모차', when:c=>c.ageM<=42 && c.hours>=2},
@@ -386,21 +437,26 @@ const FEEDING = ['모유','분유','혼합','유아식'];
 const S = {
   birth:'', startT:'10:00', hours:3, temp:22, sky:'맑음',
   places:['야외'], transport:'도보', feeding:'혼합',
+  // 저장된 임무를 불러오면 그때의 개월수를 여기 고정한다. 생년월일을 직접
+  // 고치면 다시 null이 되고, 계산된 월령이 우선한다.
+  ageOverride:null,
   checked:{}, stock:{}
 };
 
 const $ = s => document.querySelector(s);
 const toast = m => { const t=$('#toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1800); };
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 
 function ageMonths(){
   if(!S.birth) return null;
   const b=new Date(S.birth), n=new Date();
   return Math.max(0,(n.getFullYear()-b.getFullYear())*12 + (n.getMonth()-b.getMonth()) - (n.getDate()<b.getDate()?1:0));
 }
+const fmtAge = a => a>=24 ? `만 ${Math.floor(a/12)}세 ${a%12}개월` : `${a}개월`;
 function ctx(){
   const [h,m]=S.startT.split(':').map(Number);
   const sh=h+m/60;
-  return {ageM:ageMonths()??12, hours:S.hours, startH:sh, endH:sh+S.hours,
+  return {ageM:S.ageOverride ?? ageMonths() ?? 12, hours:S.hours, startH:sh, endH:sh+S.hours,
           temp:+S.temp, sky:S.sky, places:S.places, transport:S.transport,
           feeding:S.feeding, month:new Date().getMonth()+1};
 }
@@ -430,9 +486,9 @@ function chipGroup(el, opts, get, set, multi){
 function renderForm(){
   $('#birth').value=S.birth; $('#start').value=S.startT; $('#temp').value=S.temp;
   $('#hOut').textContent=S.hours+'시간';
-  const a=ageMonths();
-  $('#ageOut').textContent = a===null ? '생년월일을 넣으면 월령이 계산돼요'
-    : (a>=24 ? `만 ${Math.floor(a/12)}세 ${a%12}개월` : `${a}개월`);
+  const a = S.ageOverride ?? ageMonths();
+  $('#ageOut').textContent = a==null ? '생년월일을 넣으면 월령이 계산돼요'
+    : fmtAge(a) + (S.ageOverride!=null ? ' · 저장된 임무 기준' : '');
   chipGroup($('#places'),PLACES,()=>S.places,v=>S.places=v,true);
   chipGroup($('#transport'),TRANSPORT,()=>S.transport,v=>S.transport=v);
   chipGroup($('#sky'),SKY,()=>S.sky,v=>S.sky=v);
@@ -469,7 +525,7 @@ function renderList(){
           <div class="item-name">${it.n}</div>
           ${why?`<div class="item-why">${why}</div>`:''}
         </div>
-        ${q?`<span class="qty${/여분|비장|늦/.test(why||'')?' warn':''}">${q}</span>`:''}`;
+        ${q?`<span class="qty${it.warn?' warn':''}">${fmtQty(q)}</span>`:''}`;
       const flip=()=>{ S.checked[it.id]=!S.checked[it.id]; render(); save(); };
       el.onclick=flip;
       el.onkeydown=e=>{ if(e.key===' '||e.key==='Enter'){ e.preventDefault(); flip(); } };
@@ -526,11 +582,140 @@ function renderPresets(){
     const el=document.createElement('div'); el.className='preset'; el.tabIndex=0; el.setAttribute('role','button');
     el.innerHTML=`<div><div class="preset-n">${p.n}</div><div class="preset-d">${p.d}</div></div>
                   <span class="stars">★ ${p.r} <em style="font-style:normal;color:var(--muted);font-weight:500">(${p.v})</em></span>`;
-    const apply=()=>{ Object.assign(S,p.s); S.checked={}; render(); save(); toast('임무를 불러왔어요'); window.scrollTo({top:0,behavior:'smooth'}); };
+    const apply=()=>{ Object.assign(S,p.s); S.checked={}; S.ageOverride=null; render(); save(); toast('임무를 불러왔어요'); window.scrollTo({top:0,behavior:'smooth'}); };
     el.onclick=apply;
     el.onkeydown=e=>{ if(e.key==='Enter'){apply();} };
     box.appendChild(el);
   });
+}
+
+/* =========================================================
+   6-B. 내 임무 — kits 테이블. 로그인한 본인 것만 (RLS가 보장)
+   ========================================================= */
+let myKits = [];
+
+/* 조건 요약 한 줄 — 카드 보조 텍스트와 저장 이름 기본값에 쓴다 */
+function kitSummary(c){
+  if(!c) return '';
+  const b=[];
+  if(c.ageM!=null) b.push(fmtAge(+c.ageM));
+  if(Array.isArray(c.places)&&c.places.length) b.push(c.places.join('·'));
+  if(c.hours!=null) b.push(c.hours+'시간');
+  if(c.temp!=null&&c.temp!=='') b.push(c.temp+'℃');
+  return b.join(' · ');
+}
+
+function renderKits(){
+  const sec=$('#myKits'), box=$('#kits');
+  if(!sb || !session){ sec.hidden=true; box.innerHTML=''; return; }
+  sec.hidden=false;
+  box.innerHTML='';
+
+  if(!myKits.length){
+    box.innerHTML='<div class="preset-d">아직 저장한 임무가 없어요. 조건을 맞춘 뒤 ‘임무로 저장’을 눌러보세요</div>';
+    return;
+  }
+
+  myKits.forEach(k=>{
+    const el=document.createElement('div');
+    el.className='preset'; el.tabIndex=0; el.setAttribute('role','button');
+    const sub = k.description || kitSummary(k.conditions)
+              || new Date(k.created_at).toLocaleDateString('ko-KR');
+    el.innerHTML=`<div><div class="preset-n">${esc(k.title)}</div><div class="preset-d">${esc(sub)}</div></div>`;
+
+    const del=document.createElement('button');
+    del.type='button'; del.className='ghost'; del.textContent='×';
+    del.style.padding='4px 11px';
+    del.setAttribute('aria-label', k.title+' 삭제');
+    del.onclick=e=>{ e.stopPropagation(); removeKit(k); };
+    del.onkeydown=e=>{ e.stopPropagation(); };
+    el.appendChild(del);
+
+    const apply=()=>applyKit(k);
+    el.onclick=apply;
+    el.onkeydown=e=>{ if(e.key==='Enter'){ apply(); } };
+    box.appendChild(el);
+  });
+}
+
+async function loadKits(){
+  if(!sb || !session){ myKits=[]; renderKits(); return; }
+  try{
+    const {data,error}=await sb.from('kits')
+      .select('id,title,description,conditions,created_at')
+      .eq('owner_id', session.user.id)
+      .order('created_at',{ascending:false});
+    if(error) throw error;
+    myKits=data||[];
+  }catch(e){
+    console.error('임무 목록 불러오기 실패', e);
+    myKits=[];
+  }
+  renderKits();
+}
+
+/* 저장된 조건을 그대로 재현한다. 개월수는 저장 시점 값으로 고정 */
+function applyKit(k){
+  const c=k.conditions||{};
+  S.ageOverride = (c.ageM==null ? null : +c.ageM);
+  Object.assign(S,{
+    startT:    c.startT || S.startT,
+    hours:     c.hours!=null ? +c.hours : S.hours,
+    temp:      c.temp!=null&&c.temp!=='' ? +c.temp : S.temp,
+    sky:       c.sky || S.sky,
+    places:    Array.isArray(c.places) ? c.places.slice() : S.places,
+    transport: c.transport || S.transport,
+    feeding:   c.feeding || S.feeding
+  });
+  S.checked={};
+  render(); save();
+  toast('임무를 불러왔어요');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+async function saveKit(){
+  if(!sb || !session){ toast('로그인하면 임무를 저장할 수 있어요'); return; }
+  const c=ctx();
+  const suggest=(S.places.length ? S.places.join('·') : '오늘')+' 출동';
+  const raw=prompt('임무 이름을 알려주세요', suggest);
+  if(raw===null) return;                       // 취소
+  const title=raw.trim();
+  if(!title){ toast('임무 이름을 적어주세요'); return; }
+  if(title.length>60){ toast('임무 이름은 60자까지예요'); return; }
+
+  // qty는 {value,unit} 구조로 저장한다. 문자열로 굳혀 두면 나중에 재계산·수정·합산을 못 한다.
+  const items=ITEMS.filter(i=>!i.when||i.when(c))
+                   .map(i=>({id:i.id, name:i.n, qty:i.q?i.q(c):null}));
+  try{
+    const {error}=await sb.from('kits').insert({
+      owner_id: session.user.id,
+      title,
+      conditions:{ageM:c.ageM, hours:S.hours, startT:S.startT, temp:+S.temp,
+                  sky:S.sky, places:S.places, transport:S.transport, feeding:S.feeding},
+      items,
+      is_public:false
+    });
+    if(error) throw error;
+    toast('임무를 저장했어요');
+    await loadKits();
+  }catch(e){
+    console.error('임무 저장 실패', e);
+    toast('임무를 저장하지 못했어요');
+  }
+}
+
+async function removeKit(k){
+  if(!sb || !session) return;
+  if(!confirm(`‘${k.title}’ 임무를 지울까요?`)) return;
+  try{
+    const {error}=await sb.from('kits').delete().eq('id', k.id);
+    if(error) throw error;
+    toast('임무를 지웠어요');
+    await loadKits();
+  }catch(e){
+    console.error('임무 삭제 실패', e);
+    toast('임무를 지우지 못했어요');
+  }
 }
 
 /* =========================================================
@@ -556,6 +741,7 @@ function renderAuth(){
 $('#btnAuth').onclick=async()=>{
   if(!sb) return;
   if(session){
+    await flushCloudSave();   // 로그아웃으로 세션이 사라지기 전에 대기 중인 쓰기를 내보낸다
     await sb.auth.signOut();
   }else{
     const {error}=await sb.auth.signInWithOAuth({
@@ -566,18 +752,36 @@ $('#btnAuth').onclick=async()=>{
   }
 };
 
-$('#birth').onchange=e=>{S.birth=e.target.value;render();save();};
+/* 생년월일을 직접 고치면 저장된 임무의 개월수 고정을 푼다 (직접 입력이 우선) */
+$('#birth').onchange=e=>{S.birth=e.target.value;S.ageOverride=null;render();save();};
 $('#start').onchange=e=>{S.startT=e.target.value;render();save();};
 $('#temp').oninput=e=>{S.temp=e.target.value;render();save();};
 $('#hMinus').onclick=()=>{S.hours=Math.max(1,S.hours-1);render();save();};
 $('#hPlus').onclick=()=>{S.hours=Math.min(12,S.hours+1);render();save();};
 $('#btnProfile').onclick=()=>{ $('#birth').focus(); window.scrollTo({top:0,behavior:'smooth'}); };
 $('#btnSave').onclick=async()=>{ await save(); toast('이 임무를 저장했어요'); };
+$('#btnSaveKit').onclick=saveKit;
 $('#btnShare').onclick=async()=>{
   const url=location.origin+location.pathname+'#k='+encode();
   try{ await navigator.clipboard.writeText(url); toast('공유 링크를 복사했어요'); }
   catch(e){ prompt('이 링크를 복사하세요',url); }
 };
+
+/* 대기 중인 클라우드 쓰기를 놓치지 않기 위한 안전망 — 디바운스 타이머를
+   기다리지 않고 앱이 백그라운드로 가거나 닫히는 순간 즉시 내보낸다.
+   모바일은 앱 전환이 잦아 pagehide 없이 visibilitychange만 오는 경우가 흔하다. */
+window.addEventListener('pagehide', ()=>{ flushCloudSave(); });
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='hidden') flushCloudSave();
+});
+
+/* PWA — 서비스워커 등록. file://로 열었을 때는 시도하지 않는다(개발 중 콘솔 오염 방지) */
+if('serviceWorker' in navigator && location.protocol!=='file:'){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('./sw.js', {scope:'./'})
+      .catch(e=>console.warn('서비스워커 등록 실패', e));
+  });
+}
 
 (async function init(){
   if(sb){
@@ -588,9 +792,11 @@ $('#btnShare').onclick=async()=>{
 
   const saved=await Store.get(KEY);
   if(saved) Object.assign(S,saved);
-  if(location.hash.startsWith('#k=')&&decode(location.hash.slice(3))) S.checked={};
+  // 공유 링크는 생년월일을 직접 실어 나르므로 개월수 고정을 푼다
+  if(location.hash.startsWith('#k=')&&decode(location.hash.slice(3))){ S.checked={}; S.ageOverride=null; }
   renderAuth();                       // Store.get에서 nickname을 받아왔을 수 있다
   renderPresets(); render();
+  loadKits();                         // 로그인 상태면 내 임무 목록을 채운다
 
   // 로그인/로그아웃되면 저장소가 바뀐다 → 다시 읽어서 그리기
   if(sb) sb.auth.onAuthStateChange((event, s)=>{
@@ -606,6 +812,7 @@ $('#btnShare').onclick=async()=>{
       if(data) Object.assign(S,data);
       else if(session) await Store.set(KEY,S);   // 첫 로그인 — 쓰던 상태를 올려둔다
       renderAuth(); render();
+      await loadKits();                          // 로그아웃이면 목록을 비우고 섹션을 숨긴다
     },0);
   });
 })();
