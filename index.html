@@ -160,7 +160,10 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
       <h1>오늘도 출동</h1>
       <p>영유아 외출 준비물 — 오늘 챙길 것만 딱</p>
     </div>
-    <button class="ghost" id="btnProfile">아이 정보</button>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="ghost" id="btnAuth" hidden>구글로 로그인</button>
+      <button class="ghost" id="btnProfile">아이 정보</button>
+    </div>
   </div>
 
   <!-- 조건 입력 -->
@@ -237,22 +240,72 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
 </div>
 <div class="toast" id="toast"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 /* =========================================================
-   1. 저장소 어댑터  — 나중에 이 객체만 Supabase로 교체하면 됨
+   0. Supabase 클라이언트
+   publishable 키는 브라우저에 노출되는 게 정상이다. 방어선은 RLS다.
+   CDN을 못 불러오면 sb가 null → 앱은 localStorage만으로 그대로 동작한다.
    ========================================================= */
+const SB_URL = 'https://nzqydlttqrdyrtdgjmbg.supabase.co';
+const SB_KEY = 'sb_publishable_FoR5K5gcyeGMggdjaiqZOA_o4Bj9u1z';
+const sb = window.supabase ? window.supabase.createClient(SB_URL, SB_KEY) : null;
+
+let session  = null;   // 로그인 세션. null이면 전부 localStorage 경로
+let nickname = '';     // profiles.nickname (버튼 라벨용)
+
+/* =========================================================
+   1. 저장소 어댑터
+   로그인 O → profiles.settings (jsonb) / 로그인 X 또는 실패 → localStorage
+   get(k)/set(k,v) 시그니처는 그대로. 앱의 나머지는 이걸 몰라도 된다.
+   ========================================================= */
+async function localGet(k){
+  try{
+    if(window.storage){ const r = await window.storage.get(k); return r ? JSON.parse(r.value) : null; }
+    const v = localStorage.getItem(k); return v ? JSON.parse(v) : null;
+  }catch(e){ return null; }
+}
+async function localSet(k,v){
+  try{
+    if(window.storage){ await window.storage.set(k, JSON.stringify(v)); return; }
+    localStorage.setItem(k, JSON.stringify(v));
+  }catch(e){}
+}
+
 const Store = {
   async get(k){
-    try{
-      if(window.storage){ const r = await window.storage.get(k); return r ? JSON.parse(r.value) : null; }
-      const v = localStorage.getItem(k); return v ? JSON.parse(v) : null;
-    }catch(e){ return null; }
+    if(sb && session){
+      try{
+        const {data,error} = await sb.from('profiles')
+          .select('nickname,settings').eq('id', session.user.id).maybeSingle();
+        if(error) throw error;
+        if(data){
+          if(data.nickname) nickname = data.nickname;
+          const s = data.settings;
+          if(s && typeof s==='object' && Object.keys(s).length) return s;
+        }
+        return null;                       // 아직 클라우드에 저장된 게 없다
+      }catch(e){ /* 네트워크·권한 문제 → 로컬로 폴백 */ }
+    }
+    return localGet(k);
   },
   async set(k,v){
-    try{
-      if(window.storage){ await window.storage.set(k, JSON.stringify(v)); return; }
-      localStorage.setItem(k, JSON.stringify(v));
-    }catch(e){}
+    if(sb && session){
+      try{
+        const uid = session.user.id;
+        // profiles 행은 가입 시 트리거가 만들어 두므로 update가 정상 경로다.
+        // (스키마상 authenticated에 insert 권한이 없어 upsert는 실패할 수 있다)
+        const {data,error} = await sb.from('profiles')
+          .update({settings:v}).eq('id', uid).select('id');
+        if(error) throw error;
+        if(!data || !data.length){          // 행이 없는 예외 상황에만 upsert 시도
+          const r = await sb.from('profiles').upsert({id:uid, settings:v}).select('id');
+          if(r.error) throw r.error;
+        }
+        return;
+      }catch(e){ /* 실패하면 로컬에라도 남긴다 */ }
+    }
+    return localSet(k,v);
   }
 };
 
@@ -483,7 +536,35 @@ function renderPresets(){
 /* =========================================================
    7. 배선
    ========================================================= */
-const save=()=>Store.set('rollout:v1',S);
+const KEY='rollout:v1';
+const save=()=>Store.set(KEY,S);
+
+/* 로그인 버튼 — 기능 라벨이므로 평범한 말로 */
+function renderAuth(){
+  const b=$('#btnAuth');
+  if(!sb){ b.hidden=true; return; }
+  b.hidden=false;
+  if(session){
+    const name = nickname && (nickname.length>8 ? nickname.slice(0,8)+'…' : nickname);
+    b.textContent = name || '로그아웃';
+    b.title = '로그아웃';
+  }else{
+    b.textContent = '구글로 로그인';
+    b.title = '구글 계정으로 로그인';
+  }
+}
+$('#btnAuth').onclick=async()=>{
+  if(!sb) return;
+  if(session){
+    await sb.auth.signOut();
+  }else{
+    const {error}=await sb.auth.signInWithOAuth({
+      provider:'google',
+      options:{redirectTo: location.origin+location.pathname}
+    });
+    if(error) toast('로그인을 시작하지 못했어요');
+  }
+};
 
 $('#birth').onchange=e=>{S.birth=e.target.value;render();save();};
 $('#start').onchange=e=>{S.startT=e.target.value;render();save();};
@@ -499,10 +580,34 @@ $('#btnShare').onclick=async()=>{
 };
 
 (async function init(){
-  const saved=await Store.get('babybag:v1');
+  if(sb){
+    try{ const {data}=await sb.auth.getSession(); session=data.session||null; }
+    catch(e){ session=null; }
+  }
+  renderAuth();
+
+  const saved=await Store.get(KEY);
   if(saved) Object.assign(S,saved);
   if(location.hash.startsWith('#k=')&&decode(location.hash.slice(3))) S.checked={};
+  renderAuth();                       // Store.get에서 nickname을 받아왔을 수 있다
   renderPresets(); render();
+
+  // 로그인/로그아웃되면 저장소가 바뀐다 → 다시 읽어서 그리기
+  if(sb) sb.auth.onAuthStateChange((event, s)=>{
+    const before = session && session.user ? session.user.id : null;
+    session = s || null;
+    if(!session) nickname='';
+    const after = session && session.user ? session.user.id : null;
+    renderAuth();
+    if(before === after) return;      // INITIAL_SESSION·토큰 갱신은 무시
+    // supabase-js 콜백 안에서 바로 다른 호출을 하지 않도록 한 틱 미룬다
+    setTimeout(async()=>{
+      const data=await Store.get(KEY);
+      if(data) Object.assign(S,data);
+      else if(session) await Store.set(KEY,S);   // 첫 로그인 — 쓰던 상태를 올려둔다
+      renderAuth(); render();
+    },0);
+  });
 })();
 </script>
 </body>
