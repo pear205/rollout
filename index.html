@@ -623,6 +623,23 @@ function renderKits(){
               || new Date(k.created_at).toLocaleDateString('ko-KR');
     el.innerHTML=`<div><div class="preset-n">${esc(k.title)}</div><div class="preset-d">${esc(sub)}</div></div>`;
 
+    // 공개 전환은 되돌릴 수 없다(이번 범위에선 비공개로 되돌리는 기능이 없다)
+    // → 이미 공개된 킷은 버튼 대신 상태 표시만 남긴다
+    if(k.is_public){
+      const tag=document.createElement('span');
+      tag.className='preset-d'; tag.textContent='공개됨';
+      tag.style.whiteSpace='nowrap';
+      el.appendChild(tag);
+    }else{
+      const pub=document.createElement('button');
+      pub.type='button'; pub.className='ghost'; pub.textContent='공개하기';
+      pub.style.padding='4px 11px';
+      pub.setAttribute('aria-label', k.title+' 공개하기');
+      pub.onclick=e=>{ e.stopPropagation(); publishKit(k); };
+      pub.onkeydown=e=>{ e.stopPropagation(); };
+      el.appendChild(pub);
+    }
+
     const del=document.createElement('button');
     del.type='button'; del.className='ghost'; del.textContent='×';
     del.style.padding='4px 11px';
@@ -642,7 +659,7 @@ async function loadKits(){
   if(!sb || !session){ myKits=[]; renderKits(); return; }
   try{
     const {data,error}=await sb.from('kits')
-      .select('id,title,description,conditions,created_at')
+      .select('id,title,description,conditions,is_public,created_at')
       .eq('owner_id', session.user.id)
       .order('created_at',{ascending:false});
     if(error) throw error;
@@ -715,6 +732,143 @@ async function removeKit(k){
   }catch(e){
     console.error('임무 삭제 실패', e);
     toast('임무를 지우지 못했어요');
+  }
+}
+
+/* 내 임무를 공개로 전환. 공개해야만 다른 부모가 보고 별점을 줄 수 있다.
+   RLS의 "내 킷만 수정" 정책이 남의 킷 공개를 막아준다. */
+async function publishKit(k){
+  if(!sb || !session) return;
+  if(!confirm(`‘${k.title}’ 임무를 공개할까요?\n다른 부모가 보고 별점을 줄 수 있어요. 되돌리려면 임무를 지워야 해요.`)) return;
+  try{
+    const {error}=await sb.from('kits').update({is_public:true}).eq('id', k.id);
+    if(error) throw error;
+    toast('임무를 공개했어요');
+    await loadKits();
+    await loadPublicKits();        // 방금 공개한 킷이 아래 목록에도 나타나야 한다
+  }catch(e){
+    console.error('임무 공개 실패', e);
+    toast('임무를 공개하지 못했어요');
+  }
+}
+
+/* =========================================================
+   6-C. 공개 임무 + 별점 — kits_with_author 뷰 (비로그인도 읽을 수 있다)
+   공개 임무가 0개면 하드코딩 PRESETS로 폴백한다(콜드스타트).
+   둘을 섞지 않는다 — "예시"와 "진짜"의 구분이 흐려진다.
+   ========================================================= */
+let pubKits   = [];
+let myRatings = {};   // kit_id → 내가 준 점수. 별을 채워 보여주는 용도
+
+async function loadPublicKits(){
+  if(!sb){ pubKits=[]; myRatings={}; renderPublicKits(); return; }
+  try{
+    const {data,error}=await sb.from('kits_with_author')
+      .select('*')
+      .order('rating_avg',{ascending:false})
+      .order('rating_count',{ascending:false})
+      .limit(20);
+    if(error) throw error;
+    pubKits=data||[];
+  }catch(e){
+    console.error('공개 임무 불러오기 실패', e);
+    pubKits=[];
+  }
+
+  myRatings={};
+  if(session && pubKits.length){
+    try{
+      const {data,error}=await sb.from('ratings')
+        .select('kit_id,score')
+        .eq('user_id', session.user.id)
+        .in('kit_id', pubKits.map(k=>k.id));
+      if(error) throw error;
+      (data||[]).forEach(r=>{ myRatings[r.kit_id]=r.score; });
+    }catch(e){ console.error('내 별점 불러오기 실패', e); }
+  }
+  renderPublicKits();
+}
+
+function renderPublicKits(){
+  if(!pubKits.length){ renderPresets(); return; }   // 콜드스타트 폴백
+  const box=$('#presets'); box.innerHTML='';
+
+  pubKits.forEach(k=>{
+    const el=document.createElement('div');
+    el.className='preset'; el.tabIndex=0; el.setAttribute('role','button');
+
+    const sub=[k.description || kitSummary(k.conditions), k.author]
+              .filter(Boolean).join(' · ');
+    const body=document.createElement('div');
+    body.innerHTML=`<div class="preset-n">${esc(k.title)}</div><div class="preset-d">${esc(sub)}</div>`;
+    el.appendChild(body);
+    el.appendChild(ratingBox(k));
+
+    const apply=()=>applyKit(k);      // conditions 구조가 내 임무와 같아 그대로 재사용
+    el.onclick=apply;
+    el.onkeydown=e=>{ if(e.key==='Enter'){ apply(); } };
+    box.appendChild(el);
+  });
+}
+
+/* 평균 별점 + (본인 킷이 아니면) 별점 입력 */
+function ratingBox(k){
+  const wrap=document.createElement('div');
+  wrap.style.cssText='display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex:0 0 auto';
+
+  const avg=document.createElement('span');
+  avg.className='stars';
+  avg.innerHTML = k.rating_count>0
+    ? `★ ${Number(k.rating_avg).toFixed(1)} <em style="font-style:normal;color:var(--muted);font-weight:500">(${k.rating_count})</em>`
+    : `<em style="font-style:normal;color:var(--muted);font-weight:500">아직 별점 없음</em>`;
+  wrap.appendChild(avg);
+
+  // 본인이 올린 공개 킷에는 입력을 아예 띄우지 않는다 — RLS가 어차피 막는다
+  const mine = session && session.user && k.owner_id===session.user.id;
+  if(!mine) wrap.appendChild(starPicker(k));
+  return wrap;
+}
+
+function starPicker(k){
+  const p=document.createElement('div');
+  p.className='stars';
+  p.style.cssText='display:flex;gap:1px';
+  const my=myRatings[k.id]||0;
+  for(let n=1;n<=5;n++){
+    const b=document.createElement('button');
+    b.type='button'; b.textContent='★';
+    b.style.cssText='background:none;border:none;padding:0 1px;line-height:1;'
+      +'font-family:inherit;font-size:14px;cursor:pointer;color:'
+      +(n<=my ? 'var(--amber)' : 'var(--line)');
+    b.setAttribute('aria-label', k.title+' 별점 '+n+'점');
+    // 카드 클릭(임무 불러오기)이 같이 실행되지 않도록 반드시 막는다
+    b.onclick=e=>{ e.stopPropagation(); rateKit(k,n); };
+    b.onkeydown=e=>{ e.stopPropagation(); };
+    p.appendChild(b);
+  }
+  return p;
+}
+
+async function rateKit(k,score){
+  if(!sb || !session){ toast('로그인하면 별점을 남길 수 있어요'); return; }
+  const uid=session.user.id;
+  if(k.owner_id===uid){ toast('내가 올린 임무에는 별점을 줄 수 없어요'); return; }
+  try{
+    // (kit_id,user_id)가 PK라 한 사람당 한 표. 이미 줬으면 갱신한다
+    const {data,error}=await sb.from('ratings')
+      .select('score').eq('kit_id',k.id).eq('user_id',uid).maybeSingle();
+    if(error) throw error;
+    const r = data
+      ? await sb.from('ratings').update({score}).eq('kit_id',k.id).eq('user_id',uid)
+      : await sb.from('ratings').insert({kit_id:k.id, user_id:uid, score});
+    if(r.error) throw r.error;
+    myRatings[k.id]=score;
+    toast('별점을 남겼어요');
+    await loadPublicKits();          // 갱신된 평균·개수를 다시 받아온다
+  }catch(e){
+    // 그 사이 킷이 비공개로 바뀌는 등 RLS가 막는 경우
+    console.error('별점 저장 실패', e);
+    toast('별점을 남기지 못했어요');
   }
 }
 
@@ -795,8 +949,9 @@ if('serviceWorker' in navigator && location.protocol!=='file:'){
   // 공유 링크는 생년월일을 직접 실어 나르므로 개월수 고정을 푼다
   if(location.hash.startsWith('#k=')&&decode(location.hash.slice(3))){ S.checked={}; S.ageOverride=null; }
   renderAuth();                       // Store.get에서 nickname을 받아왔을 수 있다
-  renderPresets(); render();
+  renderPresets(); render();          // 먼저 폴백을 그려 빈 화면을 안 보여준다
   loadKits();                         // 로그인 상태면 내 임무 목록을 채운다
+  loadPublicKits();                   // 공개 임무가 있으면 PRESETS 자리를 대체한다
 
   // 로그인/로그아웃되면 저장소가 바뀐다 → 다시 읽어서 그리기
   if(sb) sb.auth.onAuthStateChange((event, s)=>{
@@ -813,6 +968,7 @@ if('serviceWorker' in navigator && location.protocol!=='file:'){
       else if(session) await Store.set(KEY,S);   // 첫 로그인 — 쓰던 상태를 올려둔다
       renderAuth(); render();
       await loadKits();                          // 로그아웃이면 목록을 비우고 섹션을 숨긴다
+      await loadPublicKits();                    // 별점 입력 가능 여부가 로그인 상태에 따라 달라진다
     },0);
   });
 })();
