@@ -18,28 +18,33 @@
 
 ## 현재 상태 (2026-07 기준)
 
+### 배포된 주소 / 계정
+
+- 앱: `https://pear205.github.io/rollout/`
+- 저장소: `https://github.com/pear205/rollout` (public)
+- Supabase project-ref: `nzqydlttqrdyrtdgjmbg`
+- OAuth 콜백: `https://nzqydlttqrdyrtdgjmbg.supabase.co/auth/v1/callback`
+
 ### 완료
-- `index.html` — 단일 파일 프로토타입. 빌드 도구 없음. 그대로 열면 동작한다.
-  - 규칙 엔진 (아이템 42개), 조건 입력 폼, 체크리스트, 진행 게이지
+- `index.html` — 단일 파일. 빌드 도구 없음. 그대로 열면 동작한다.
+  - 규칙 엔진 (아이템 41개), 조건 입력 폼, 체크리스트, 진행 게이지
   - 임무(프리셋) 5개 하드코딩
   - URL 해시로 조건 공유 (`#k=` + base64)
-  - `Store` 어댑터를 통한 로컬 저장
 - Supabase 프로젝트 생성 완료 (리전: Northeast Asia / Seoul, Free 플랜)
 - `schema.sql` 적용 완료 — 테이블 3개, 트리거 3개, RLS 정책 10개, GRANT, 뷰 1개
   - 검증됨: 세 테이블 모두 `rowsecurity = true`, `pg_policies` 10행
+- **GitHub Pages 배포** 완료
+- **Google OAuth** 완료 — Google Cloud Console 클라이언트 발급 → Supabase Provider 등록 → URL Configuration까지. 실제 로그인 동작 확인됨
+- **`Store` → Supabase 전환** 완료 — 로그인 시 `profiles.settings`(jsonb), 비로그인 시 localStorage
+- **로그인 UI** 완료 — 구글 버튼 / 닉네임 표시 / 로그아웃
+- **임무 저장·불러오기** 완료 — `kits` 테이블. `S.ageOverride`로 저장 시점 월령을 고정한다
+- **수량 구조화** 완료 — `q`가 `{value, unit}`을 반환. 표시는 `fmtQty()`가 담당
+- **저장 디바운스** 완료 — localStorage는 즉시, 클라우드는 1200ms 디바운스 + `pagehide`/`visibilitychange`/로그아웃 직전 flush
+- **PWA** 완료 — `manifest.json`, `sw.js`, `icons/`. 배포 환경에서 등록·오프라인 캐시·Supabase 요청 비캐싱까지 검증됨
 
 ### 미완료 — 다음 작업 순서
-1. **GitHub Pages 배포** → `https://<user>.github.io/<repo>/` 주소 확보
-   - OAuth 리디렉션 대상이 필요하므로 이게 반드시 먼저다. `file://`로는 로그인이 안 된다.
-2. **Google OAuth 설정**
-   - Google Cloud Console에서 OAuth 클라이언트 ID(웹) 발급
-   - 승인된 리디렉션 URI: `https://<project-ref>.supabase.co/auth/v1/callback`
-   - client ID/secret을 Supabase → Authentication → Providers → Google에 입력
-   - Supabase → Authentication → URL Configuration에 Pages 주소를 Site URL / Redirect URLs로 등록
-3. **`Store` 객체를 Supabase로 교체** — 파일 상단, 이 객체만 바꾸면 전체가 전환되도록 설계돼 있다
-4. **로그인 UI** — 구글 버튼, 로그인 상태 표시, 로그아웃
-5. **임무 저장·불러오기** — `kits` 테이블
-6. **별점** — `ratings` 테이블. 하드코딩된 `PRESETS`를 `kits_with_author` 뷰 조회로 교체
+1. **별점** — `ratings` 테이블. 하드코딩된 `PRESETS`를 `kits_with_author` 뷰 조회로 교체
+   - 이때 `PRESETS` 카드 클릭 시 `S.ageOverride`가 남는 문제도 함께 정리된다
 
 ---
 
@@ -68,9 +73,13 @@
 ### 기술 선택
 
 - **단일 HTML 파일.** 빌드 도구, 프레임워크, npm 없음. 프로토타입 단계에서는 이걸 유지한다.
-- **`Store` 어댑터 패턴.** `window.storage` → localStorage → (다음) Supabase. 저장소 교체가 한 곳에서 끝나야 한다.
-- **규칙 엔진은 `ITEMS` 배열.** 각 항목이 `{id, c(카테고리), n(이름), when(ctx), q(ctx), why(ctx)}`.
+- **`Store` 어댑터 패턴.** localStorage ↔ Supabase 전환이 이 객체 한 곳에서 끝난다. 이 경계를 무너뜨리지 말 것.
+- **규칙 엔진은 `ITEMS` 배열.** 각 항목이 `{id, c(카테고리), n(이름), when(ctx), q(ctx), why(ctx), warn}`.
   카테고리 트리를 만들지 말고 조건 함수를 붙이는 방식을 유지할 것.
+- **수량은 반드시 구조화된 값으로.** `q(ctx)`는 `{value, unit}`을 반환한다 (`value:null`이면 수량 없이 단위만, 예: 파우치).
+  **표시용 문자열("5장")을 반환하거나 저장하지 말 것** — 재계산·수정·합산이 막히고, 그건 이 앱의 존재 이유를 깨뜨린다.
+  화면 표시는 `fmtQty()` 하나만 담당한다.
+- **강조 표시는 `warn:true` 플래그로.** 예전엔 why 텍스트를 정규식으로 검사했는데, 문구만 고쳐도 스타일이 조용히 깨졌다. 되돌리지 말 것.
 - **Supabase Free 플랜.** 7일간 DB 요청이 없으면 자동 일시정지된다. 데모 전에 한 번 깨울 것.
 
 ### 디자인 토큰 (index.html의 `:root`)
@@ -99,10 +108,39 @@
 
 ---
 
+---
+
+## 앱(안드로이드·iOS) 전환 — 언제, 어떻게
+
+**결론: 지금은 웹(PWA)으로 간다. 네이티브는 재작성이 아니라 지금 코드를 감싸는 것이다.**
+React Native·Flutter 재작성은 하지 말 것 — 이 앱은 폼+계산+체크리스트라 네이티브 성능이 필요 없고, 코드베이스만 둘로 늘어난다.
+
+수익화 방식이 경로를 가른다:
+
+| | 웹(PWA) 유지 | Capacitor로 감싸기 |
+|---|---|---|
+| 광고 | AdSense만. 체류가 짧아 수익 미미 | **AdMob 가능** (웹에선 불가) |
+| 결제 | 토스·카카오페이 → **수수료 0%** | 인앱결제 강제 → **15~30%** |
+| iOS | 홈 화면 추가로 사용 | 단순 웹뷰는 심사 거절 위험 |
+
+- 안드로이드 스토어만 원하면 **TWA**(Bubblewrap)가 중간 단계다. 실제 https 주소를 그대로 쓰므로 **구글 로그인이 수정 없이 동작**한다.
+- Capacitor로 가면 `signInWithOAuth`의 `redirectTo`를 딥링크로 재작업해야 한다. Mac/Xcode도 필요해진다.
+
+### "단일 HTML 파일" 결정을 바꿀 트리거
+
+아래 신호가 보이기 전엔 바꾸지 말 것 (조기 도입은 순손실):
+
+- **JS 1,500~2,000줄 초과** 또는 **협업자 2인** 또는 파일 안에서 길찾기 실패 → 파일 분할(빌드 도입)
+- **수량 인라인 편집 도입** 또는 화면 항목 상시 150개 이상 → 전체 innerHTML 재생성을 타깃 업데이트로
+- **아이 여러 명 / 날씨 자동 채움 착수** → 중앙 `setState(patch)` 함수 하나 (Redux 아님)
+- **AdMob 또는 iOS 앱스토어 확정** → Capacitor. 이때 처음으로 npm/빌드가 정당화된다
+
+---
+
 ## 아직 정하지 않은 것
 
 - **입력 항목이 6개인데 많다.** 실사용해보고 줄일 것. 기온은 날씨 API(기상청 단기예보)로 자동 채우면 하나 줄어든다.
-- PWA 전환 (홈 화면 추가, 오프라인). 앱스토어보다 이게 먼저다.
+- 광고·결제 중 무엇을 주력으로 할지 (위 표 참고 — 이걸 정해야 앱 전환 여부가 정해진다)
 - 상비 항목("가방에 늘 있음") 관리 UI — `S.stock`에 자리만 있고 미구현
 - 아이 여러 명 지원 — 현재 한 명 기준
 - 도메인, 앱스토어 이름 중복 확인 미완료
@@ -110,7 +148,11 @@
 ## 파일
 
 ```
-index.html    앱 전체 (단일 파일)
-schema.sql    Supabase 스키마. 적용 완료. 구조 참고용으로 남겨둠
-CLAUDE.md     이 파일
+index.html     앱 전체 (단일 파일)
+manifest.json  PWA 매니페스트. start_url·scope는 상대경로("./") — 하위 경로 배포라 절대경로면 깨진다
+sw.js          서비스워커. 앱 셸 network-first / CDN cache-first / *.supabase.co는 절대 캐시 금지
+icons/         앱 아이콘 (PNG 4개 + SVG 2개)
+schema.sql     Supabase 스키마. 적용 완료. 구조 참고용으로 남겨둠
+docs/          배포 가이드 HTML 2개. .gitignore로 커밋 제외됨 (로컬 참고용)
+CLAUDE.md      이 파일
 ```
